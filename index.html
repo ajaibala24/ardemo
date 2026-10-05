@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AR Lab: Modem, Router and Raspberry Pi in 3D</title>
+<style>
+:root{--bg:#e6eef9;--panel:#ffffff;--tx:#0f172a;--mu:#475569;--ac:#0369a1;--bd:#cbd5e1;--code:#0f172a;--codetx:#86efac;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1220;--panel:#111a2e;--tx:#e8eefc;--mu:#9fb0d0;--ac:#38bdf8;--bd:#24324f}}
+:root[data-theme="dark"]{--bg:#0b1220;--panel:#111a2e;--tx:#e8eefc;--mu:#9fb0d0;--ac:#38bdf8;--bd:#24324f}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+#stage{flex:1;position:relative;min-height:0;touch-action:none}
+#stage canvas{display:block;width:100%;height:100%}
+#hint{position:absolute;top:10px;left:12px;font-size:12px;color:var(--mu);background:var(--panel);border:1px solid var(--bd);padding:4px 10px;border-radius:99px}
+#panel{background:var(--panel);border-top:1px solid var(--bd);padding:12px 14px 14px;max-height:48%;overflow:auto}
+#top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#dots{display:flex;gap:6px}
+#dots button{width:12px;height:12px;border-radius:50%;border:2px solid var(--ac);background:transparent;padding:0}
+#dots button.on{background:var(--ac)}
+#badge{font-weight:600;color:var(--ac)}
+h2{margin:6px 0 4px;font-size:18px}
+p{margin:4px 0;max-width:70ch}
+pre{margin:8px 0 0;background:var(--code);color:var(--codetx);padding:8px 10px;border-radius:8px;font:12.5px/1.4 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+pre:empty{display:none}
+#btns{display:flex;gap:8px;margin-top:10px}
+#btns button{flex:1;padding:10px;border-radius:10px;border:1px solid var(--ac);background:transparent;color:var(--ac);font:600 14px system-ui;cursor:pointer}
+#btns #next{background:var(--ac);color:var(--panel)}
+button:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="stage"><div id="hint">Drag to rotate. Scroll or pinch area to zoom.</div></div>
+<div id="panel">
+  <div id="top"><span id="badge"></span><div id="dots"></div></div>
+  <h2 id="ttl"></h2>
+  <p><b>Connect:</b> <span id="how"></span></p>
+  <p><b>How it works:</b> <span id="why"></span></p>
+  <pre id="cmd"></pre>
+  <div id="btns"><button id="prev">Back</button><button id="play">Auto play</button><button id="next">Next step</button></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+var stage=document.getElementById('stage');
+var renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+stage.appendChild(renderer.domElement);
+renderer.domElement.style.touchAction='none';
+var scene=new THREE.Scene();
+var cam=new THREE.PerspectiveCamera(45,1,0.1,100);
+scene.add(new THREE.HemisphereLight(0xffffff,0x334155,0.95));
+var dl=new THREE.DirectionalLight(0xffffff,0.8);dl.position.set(5,10,6);scene.add(dl);
+
+function M(c,o){return new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:.5,metalness:.2},o||{}))}
+function grp(x,y,z){var g=new THREE.Group();g.position.set(x,y,z);scene.add(g);return g}
+function bx(g,w,h,d,c,x,y,z,o){var m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),M(c,o));m.position.set(x,y,z);g.add(m);return m}
+function ledMat(){return new THREE.MeshStandardMaterial({color:0x444444,emissive:0x000000})}
+
+// lab table
+var table=new THREE.Mesh(new THREE.BoxGeometry(18,.2,7),M(0x1e293b,{roughness:.8}));
+table.position.set(-.8,-.1,.4);scene.add(table);
+
+// Internet cloud
+var cloud=grp(-7.5,.9,0);
+[[0,0,0,.6],[.6,-.1,0,.45],[-.6,-.1,0,.45],[0,.3,0,.4]].forEach(function(s){
+  var m=new THREE.Mesh(new THREE.SphereGeometry(s[3],20,16),M(0xf8fafc,{roughness:.7}));m.position.set(s[0],s[1],s[2]);cloud.add(m)});
+
+// Modem
+var modem=grp(-3.5,0,0),mLeds=[];
+bx(modem,2.2,.7,1.4,0x1f2937,0,.35,0);
+[-.5,0,.5].forEach(function(x){var l=new THREE.Mesh(new THREE.BoxGeometry(.18,.12,.05),ledMat());l.position.set(x,.35,.71);modem.add(l);mLeds.push(l)});
+bx(modem,.1,.25,.4,0x020617,-1.1,.35,0);
+bx(modem,.1,.25,.4,0x93c5fd,1.1,.35,0);
+
+// Router
+var router=grp(.5,0,0),rLeds=[];
+bx(router,2.6,.5,1.6,0x2b3a67,0,.25,0);
+[-.6,0,.6].forEach(function(x){var l=new THREE.Mesh(new THREE.BoxGeometry(.18,.1,.05),ledMat());l.position.set(x,.25,.81);router.add(l);rLeds.push(l)});
+[-.9,.9].forEach(function(x){var a=new THREE.Mesh(new THREE.CylinderGeometry(.05,.05,1.1,10),M(0x0f172a));a.position.set(x,1.05,-.5);router.add(a)});
+bx(router,.1,.22,.4,0xfacc15,-1.3,.25,0);
+[-.5,-.17,.17,.5].forEach(function(z){bx(router,.1,.22,.28,0x38bdf8,1.3,.25,z)});
+
+// Raspberry Pi
+var pi=grp(4.8,0,0),piLed;
+bx(pi,2.4,.1,1.6,0x15803d,0,.2,0);
+bx(pi,.5,.08,.5,0xcbd5e1,0,.29,0);
+bx(pi,.4,.06,.4,0x111827,.7,.28,.3);
+bx(pi,.45,.35,.5,0xcbd5e1,-1.0,.33,-.1);
+bx(pi,.3,.1,.2,0xcbd5e1,-.4,.27,.78);
+for(var r=0;r<2;r++)for(var i=0;i<20;i++){bx(pi,.06,.14,.06,0xfacc15,-.95+i*.1,.3,-.7+r*.09)}
+piLed=new THREE.Mesh(new THREE.BoxGeometry(.1,.04,.1),ledMat());piLed.position.set(.3,.27,.7);pi.add(piLed);
+
+// power adapter
+var ad=grp(6.8,0,2.4);bx(ad,.8,.5,.6,0xf1f5f9,0,.25,0);
+
+// cables
+function cable(pts,col,need){
+  var curve=new THREE.CatmullRomCurve3(pts.map(function(p){return new THREE.Vector3(p[0],p[1],p[2])}));
+  var geo=new THREE.TubeGeometry(curve,48,.055,8,false);
+  var m=new THREE.Mesh(geo,M(col,{roughness:.4}));scene.add(m);
+  return {curve:curve,geo:geo,m:m,p:0,total:geo.index.count,need:need};
+}
+var cables=[
+  cable([[-6.6,.7,0],[-5.7,.2,.5],[-4.7,.35,0]],0x9ca3af,1),
+  cable([[-2.3,.35,0],[-1.6,.05,.6],[-.85,.25,0]],0x3b82f6,2),
+  cable([[1.85,.25,-.5],[2.7,.05,-.9],[3.5,.33,-.1]],0x3b82f6,3),
+  cable([[6.5,.25,2.4],[5.5,.05,2.0],[4.4,.27,.9]],0xef4444,4)
+];
+
+// data packets
+var packets=[];
+for(var k=0;k<5;k++){var pm=new THREE.Mesh(new THREE.SphereGeometry(.1,12,10),M(0x22d3ee,{emissive:0x22d3ee,emissiveIntensity:.8}));pm.visible=false;scene.add(pm);packets.push(pm)}
+var route=[cables[2],cables[1],cables[0]];
+
+// arrows
+var arrows=[];
+for(var a=0;a<2;a++){var am=new THREE.Mesh(new THREE.ConeGeometry(.22,.55,16),M(0xfacc15,{emissive:0xfacc15,emissiveIntensity:.5}));am.rotation.x=Math.PI;am.visible=false;scene.add(am);arrows.push(am)}
+
+// labels
+function label(t,x,y,z,s){
+  var c=document.createElement('canvas');c.width=512;c.height=128;var g=c.getContext('2d');
+  g.fillStyle='rgba(15,23,42,.9)';g.fillRect(0,0,512,128);
+  g.strokeStyle='#38bdf8';g.lineWidth=6;g.strokeRect(3,3,506,122);
+  g.fillStyle='#fff';g.font='bold 54px system-ui,sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(t,256,66);
+  var sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),depthTest:false}));
+  sp.position.set(x,y,z);sp.scale.set(2.2*(s||1),.55*(s||1),1);sp.renderOrder=10;scene.add(sp);return sp;
+}
+label('Internet',-7.5,2.6,0);label('Modem',-3.5,1.4,0);label('Router',.5,2.4,0);label('Raspberry Pi',4.8,1.3,0);
+var tagGroup=[];
+
+// steps
+var S=[
+ {t:'Meet the devices',how:'Nothing to plug in yet. Drag the scene to look at each device.',why:'The Internet reaches your building through the ISP. The modem turns that signal into Ethernet data, the router shares it and hands out addresses, and the Raspberry Pi is a client that uses the network.',f:[-1,.5,0],r:15,ar:[],tags:[]},
+ {t:'Power on the modem and attach the ISP line',how:'Plug the ISP line into the LINE port, then connect the power adapter. Wait for the lights to turn green.',why:'The modem converts the ISP signal (cable, fiber or DSL) into digital Ethernet data. Green lights mean it is synced with the ISP.',f:[-5,.4,0],r:7,ar:[[-6.6,1.4,0],[-4.6,1.1,0]],tags:[['ISP line',-6.6,1.9,0],['LINE port',-4.6,1.6,0]]},
+ {t:'Modem to router: the WAN port',how:'Use an Ethernet cable from the modem ETH port to the yellow WAN port on the router.',why:'WAN is the router\u2019s internet-facing side. The router receives one public address from the ISP and shares it with every device inside.',f:[-1.6,.3,0],r:6.5,ar:[[-2.3,1.1,0],[-.85,1.0,0]],tags:[['ETH port',-2.3,1.6,0],['WAN port',-.85,1.5,0]]},
+ {t:'Router to Raspberry Pi: the LAN port',how:'Connect a second Ethernet cable from router LAN 1 to the Ethernet jack on the Pi.',why:'LAN is your local network. The router acts as a switch between all local devices. A link light on the jack means the cable is working.',f:[2.7,.3,0],r:6.5,ar:[[1.85,1.0,-.5],[3.55,1.1,-.1]],tags:[['LAN 1',1.85,1.5,-.5],['Ethernet jack',3.55,1.7,-.1]]},
+ {t:'Power the Raspberry Pi',how:'Insert the SD card, then plug the 5V USB-C adapter into the Pi power port.',why:'The Pi has no power switch. The red LED shows power, and then it boots the operating system from the SD card.',f:[5.5,.3,1.2],r:7,ar:[[6.5,1.0,2.4],[4.4,1.0,.8]],tags:[['5V adapter',6.5,1.5,2.4],['USB-C power',4.4,1.5,.8]]},
+ {t:'The router gives the Pi an IP address',how:'On the Pi, open a terminal and check the address.',why:'DHCP: the Pi asks "who am I?" and the router replies with a free address like 192.168.1.50. Now other devices can find it.',f:[2.7,.3,0],r:8,ar:[[4.8,1.6,0]],tags:[['IP 192.168.1.50',4.8,2.2,0]],cmd:'$ hostname -I\n192.168.1.50'},
+ {t:'Test the whole path',how:'Run a ping from the Pi to a public server.',why:'Each packet goes Pi \u2192 router \u2192 modem \u2192 Internet, and the reply returns the same way. A time in ms proves every link works.',f:[-1,.5,0],r:15,ar:[[4.8,1.6,0]],tags:[['ping and reply',4.8,2.2,0]],cmd:'$ ping 8.8.8.8\n64 bytes from 8.8.8.8: time=18 ms'}
+];
+var step=0,tgt=new THREE.Vector3(-1,.5,0),tgtG=new THREE.Vector3(-1,.5,0),R=15,RG=15,zoom=1,yaw=0,pitch=.45;
+var $=function(i){return document.getElementById(i)};
+var dots=$('dots');
+S.forEach(function(s,i){var b=document.createElement('button');b.setAttribute('aria-label','Step '+(i+1));b.onclick=function(){go(i)};dots.appendChild(b)});
+
+function go(n){
+  step=(n+S.length)%S.length;var s=S[step];
+  $('badge').textContent='Step '+(step+1)+' of '+S.length;
+  $('ttl').textContent=s.t;$('how').textContent=s.how;$('why').textContent=s.why;$('cmd').textContent=s.cmd||'';
+  Array.prototype.forEach.call(dots.children,function(b,i){b.className=i===step?'on':''});
+  tgtG.set(s.f[0],s.f[1],s.f[2]);RG=s.r;
+  tagGroup.forEach(function(t){scene.remove(t)});tagGroup=s.tags.map(function(t){return label(t[0],t[1],t[2],t[3],.8)});
+  arrows.forEach(function(a,i){a.visible=!!s.ar[i];if(s.ar[i])a.userData.base=s.ar[i]});
+}
+$('next').onclick=function(){go(step+1)};
+$('prev').onclick=function(){go(step-1)};
+var timer=null;
+$('play').onclick=function(){
+  if(timer){clearInterval(timer);timer=null;this.textContent='Auto play'}
+  else{timer=setInterval(function(){go(step+1)},5500);this.textContent='Stop'}
+};
+
+// drag and zoom
+var drag=false,lx=0,ly=0,cv=renderer.domElement;
+cv.addEventListener('pointerdown',function(e){drag=true;lx=e.clientX;ly=e.clientY;cv.setPointerCapture(e.pointerId)});
+cv.addEventListener('pointermove',function(e){if(!drag)return;yaw-=(e.clientX-lx)*.006;pitch=Math.max(.1,Math.min(1.25,pitch+(e.clientY-ly)*.004));lx=e.clientX;ly=e.clientY});
+cv.addEventListener('pointerup',function(){drag=false});
+cv.addEventListener('wheel',function(e){e.preventDefault();zoom=Math.max(.5,Math.min(1.6,zoom*(e.deltaY>0?1.07:.93)))},{passive:false});
+
+function resize(){var w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}
+if(window.ResizeObserver)new ResizeObserver(resize).observe(stage);window.addEventListener('resize',resize);
+
+var clock=new THREE.Clock();
+function setLed(m,on,col,pulse){m.material.color.setHex(on?col:0x444444);m.material.emissive.setHex(on?col:0x000000);m.material.emissiveIntensity=on?(pulse||1):0}
+function loop(){
+  requestAnimationFrame(loop);var t=clock.getElapsedTime();
+  // camera
+  tgt.lerp(tgtG,.06);R+=(RG*zoom-R)*.06;
+  var ph=Math.PI/2-pitch;
+  cam.position.set(tgt.x+R*Math.sin(ph)*Math.sin(yaw),tgt.y+R*Math.cos(ph),tgt.z+R*Math.sin(ph)*Math.cos(yaw));
+  cam.lookAt(tgt);
+  // cables draw-in
+  cables.forEach(function(c){
+    var goal=step>=c.need?1:0;c.p+=(goal-c.p)*.07;
+    c.m.visible=c.p>.01;c.geo.setDrawRange(0,Math.floor(c.total*c.p/3)*3);
+  });
+  // leds
+  mLeds.forEach(function(l,i){setLed(l,step>=1,0x22c55e,i===2&&step>=6?.4+.6*Math.abs(Math.sin(t*9)):1)});
+  rLeds.forEach(function(l,i){setLed(l,step>=2&&(i<2||step>=3),0x22c55e,i===2&&step>=6?.4+.6*Math.abs(Math.sin(t*9)):1)});
+  if(step>=5)setLed({material:piLed.material},true,0x22c55e,.4+.6*Math.abs(Math.sin(t*6)));
+  else if(step>=4)setLed({material:piLed.material},true,0xef4444,1);
+  else setLed({material:piLed.material},false,0,0);
+  // packets
+  var len=step>=6?3:(step===5?1:0);
+  packets.forEach(function(p,i){
+    if(!len){p.visible=false;return}
+    p.visible=true;
+    var v=Math.abs(((t*.22+i*.2)%2)-1),s=v*len,idx=Math.min(Math.floor(s),len-1),f=s-idx;
+    p.position.copy(route[idx].curve.getPoint(1-f));
+    p.material.color.setHex(v>.5?0x22d3ee:0x22c55e);
+  });
+  // arrows bounce
+  arrows.forEach(function(a){if(a.visible&&a.userData.base){var b=a.userData.base;a.position.set(b[0],b[1]+.12*Math.sin(t*5),b[2])}});
+  cloud.position.y=.9+.08*Math.sin(t*1.5);
+  renderer.render(scene,cam);
+}
+resize();go(0);loop();
+})();
+</script>
+</body>
+</html>
